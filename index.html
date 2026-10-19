@@ -265,15 +265,15 @@ body {
       sun: [36, 22, 6], actor: 'dog',
       story: ['ВО ДВОРЕ ЕДЫ БОЛЬШЕ НЕТ.', 'НА РЫНКЕ ПАХНЕТ РЫБОЙ...', '...И СОБАКАМИ. ШИПИ НА НИХ!'] },
     { name: 'ПРОСПЕКТ', time: 'ВЕЧЕР', col: ['#f9dca6', '#dd8a56', '#6f4a78', '#21192b'], len: 1950,
-      pool: ['parked', 'busstop', 'bins', 'walker', 'dog', 'bench', 'boxes', 'fence'], first: ['parked'], cars: [150, 240],
+      pool: ['parked', 'busstop', 'bins', 'walker', 'dog', 'bench', 'boxes', 'fence'], first: ['parked'], cars: [280, 400],
       sun: [44, 62, 11], dusk: true, actor: 'car',
       story: ['ВЕЧЕРЕЕТ. ВПЕРЕДИ ДОРОГА.', 'МАШИНЫ ЕДУТ БЫСТРО.', 'ВИДИШЬ ФАРЫ СПРАВА - ПРЫГАЙ!'] },
     { name: 'НАБЕРЕЖНАЯ', time: 'ЗАКАТ', col: ['#ffd8a8', '#f0786a', '#8a3d5e', '#2a1222'], len: 2100,
-      pool: ['bins', 'boxes', 'puddle', 'dog', 'dog', 'bench', 'busstop', 'walker', 'puddle'], first: ['bins'], cars: [320, 440], motos: [140, 220],
+      pool: ['bins', 'boxes', 'puddle', 'dog', 'dog', 'bench', 'busstop', 'walker', 'puddle'], first: ['bins'], cars: [460, 620], motos: [240, 340],
       sun: [150, 70, 12], dusk: true, river: true, actor: 'moto',
       story: ['ЗАКАТ НАД РЕКОЙ.', 'ЗДЕСЬ ГОНЯЮТ МОТОЦИКЛЫ.', 'МУРКА УЖЕ ОЧЕНЬ УСТАЛА.'] },
     { name: 'НОЧЬ', time: 'ДОЖДЬ', col: ['#f6e7a0', '#6f86b8', '#2d3a66', '#0b0f1f'], len: 2300, night: true,
-      pool: ['bins', 'boxes', 'parked', 'busstop', 'dog', 'janitor', 'walker', 'fence', 'puddle', 'stall'], first: ['bins'], cars: [260, 380], motos: [240, 360],
+      pool: ['bins', 'boxes', 'parked', 'busstop', 'dog', 'janitor', 'walker', 'fence', 'puddle', 'stall'], first: ['bins'], cars: [420, 560], motos: [380, 520],
       sun: [150, 24, 6], actor: 'rain',
       story: ['ПОШЁЛ ХОЛОДНЫЙ ДОЖДЬ.', 'ГДЕ-ТО ВПЕРЕДИ ГОРИТ ОКНО.', 'НУЖНО ДОЙТИ...'] }
   ];
@@ -596,7 +596,8 @@ body {
   try { unlocked = clamp(parseInt(localStorage.getItem('murka.unlocked') || '0', 10) || 0, 0, 4); hi = parseInt(localStorage.getItem('murka.hi') || '0', 10) || 0; } catch (e) {}
   function save() { try { localStorage.setItem('murka.unlocked', String(unlocked)); localStorage.setItem('murka.hi', String(hi)); } catch (e) {} }
 
-  let lv = null, cat = null, camX = 0, score = 0, levelStartScore = 0, hearts = 3, food = 100, shake = 0, starveT = 0;
+  const MAXH = 5, HISS_CD = 180;
+  let lv = null, cat = null, camX = 0, score = 0, levelStartScore = 0, hearts = MAXH, food = 100, shake = 0, starveT = 0;
   let clearInfo = null, endPage = 0, curLevel = 0, newRecord = false;
   const rain = Array.from({ length: 60 }, () => ({ x: Math.random() * (W + 40), y: Math.random() * H, s: 2.5 + Math.random() * 1.5 }));
 
@@ -604,7 +605,7 @@ body {
   function buildLevel(n) {
     const cfg = LV[n], r = mulberry32(1000 + n * 7919);
     const L = { n, cfg, len: cfg.len, props: [], plats: [], walls: [], puddles: [], items: [], ens: [], lamps: [], hints: [],
-      veh: [], warns: [], shots: [], fx: [], carT: cfg.cars ? 200 : 0, motoT: cfg.motos ? 260 : 0 };
+      veh: [], warns: [], shots: [], fx: [], carT: cfg.cars ? 300 : 0, motoT: cfg.motos ? 380 : 0 };
     const plat = (x, y, w) => L.plats.push({ x, y, w });
     const solid = (x, y, w, h) => { L.walls.push({ x, y, w, h }); plat(x, y, w); };
     const foodAt = (x, surf) => {
@@ -710,20 +711,32 @@ body {
     return L;
   }
 
+  const newCat = x => ({ x, y: GROUND - 10, w: 12, h: 10, vx: 0, vy: 0, on: true, face: 1, crouch: false, inv: 90, kb: 0, hissT: 0, hissCd: 0, anim: 0, slow: false });
   function startLevel(n) {
     curLevel = n;
     setLook(n);
     lv = buildLevel(n);
-    cat = { x: 20, y: GROUND - 10, w: 12, h: 10, vx: 0, vy: 0, on: true, face: 1, crouch: false, inv: 60, kb: 0, hissT: 0, hissCd: 0, anim: 0, slow: false };
-    camX = 0; hearts = 3; food = 85; starveT = 0; shake = 0;
+    cat = newCat(20);
+    camX = 0; hearts = MAXH; food = 90; starveT = 0; shake = 0;
     levelStartScore = score;
+    state = 'play';
+    meow();
+  }
+  // Continue from the halfway flag: same level, enemies calmed down, traffic cleared.
+  function respawn() {
+    score = lv.cp.score;
+    cat = newCat(lv.cp.x);
+    hearts = MAXH; food = 90; starveT = 0; shake = 0;
+    lv.veh = []; lv.warns = []; lv.shots = [];
+    for (const e of lv.ens) { e.scared = 150; if (e.type === 'dog') { e.st = 'sit'; e.rest = 200; } if (e.type === 'janitor') e.atk = 0; }
+    camX = clamp(cat.x - 76, 0, lv.len - W);
     state = 'play';
     meow();
   }
 
   function hurt(fromX) {
     if (cat.inv > 0 || state !== 'play') return false;
-    hearts--; cat.inv = 110; cat.kb = 14;
+    hearts--; cat.inv = 150; cat.kb = 14;
     cat.vx = cat.x + 6 < fromX ? -2.2 : 2.2; cat.vy = -2.4; cat.on = false;
     shake = 8; sfx.hurt();
     if (hearts <= 0) die();
@@ -738,7 +751,7 @@ body {
     if (state === 'title') { score = 0; storyOf(menuSel); }
     else if (state === 'story') startLevel(curLevel);
     else if (state === 'pause') state = 'play';
-    else if (state === 'dead') { score = levelStartScore; startLevel(curLevel); }
+    else if (state === 'dead') { if (lv.cp) respawn(); else { score = levelStartScore; startLevel(curLevel); } }
     else if (state === 'clear') { if (curLevel < 4) storyOf(curLevel + 1); else { state = 'end'; endPage = 0; setLook('end'); songStep = 0; meow(); } }
     else if (state === 'end') {
       if (endPage === 0) { endPage = 1; if (score > hi) { hi = score; newRecord = true; save(); } }
@@ -794,13 +807,13 @@ body {
     else { c.vx *= 0.72; if (Math.abs(c.vx) < 0.05) c.vx = 0; }
     if (c.kb <= 0) c.vx = clamp(c.vx, -max, max);
 
-    if (edge('jump') && c.on && !c.crouch) { c.vy = -3.5; c.on = false; sfx.jump(); if (c.slow) sfx.splash(); }
+    if (edge('jump') && c.on && !c.crouch) { c.vy = -3.6; c.on = false; sfx.jump(); if (c.slow) sfx.splash(); }
     if (edge('hiss') && c.hissCd === 0) {
-      c.hissT = 30; c.hissCd = 300; sfx.hiss();
+      c.hissT = 30; c.hissCd = HISS_CD; sfx.hiss();
       lv.fx.push({ kind: 'hiss', x: c.x + 6, y: c.y + 2, t: 24 });
       for (const e of lv.ens) {
         if (e.type === 'granny') continue;
-        if (Math.abs((e.x + e.w / 2) - (c.x + 6)) < 56 && Math.abs((e.y + e.h) - (c.y + c.h)) < 34) {
+        if (Math.abs((e.x + e.w / 2) - (c.x + 6)) < 72 && Math.abs((e.y + e.h) - (c.y + c.h)) < 34) {
           e.scared = e.type === 'dog' ? 110 : 130;
           if (e.type === 'dog') e.st = 'flee';
           if (e.type === 'janitor') e.atk = 0;
@@ -836,11 +849,17 @@ body {
 
     camX = clamp(c.x - 76, 0, lv.len - W);
 
+    // halfway flag
+    if (!lv.cp && c.x > lv.len * 0.5 && c.on) {
+      lv.cp = { x: Math.round(c.x), score };
+      floater(c.x - 30, c.y - 12, 'ПОЛПУТИ ПРОЙДЕНО!'); sfx.bowl();
+    }
+
     // hunger
-    food -= 100 / (60 * (curLevel === 4 ? 36 : 40));
+    food -= 100 / (60 * (curLevel === 4 ? 60 : 70));
     if (food <= 0) {
       food = 0;
-      if (++starveT % 200 === 0) { hearts--; cat.inv = 60; sfx.hurt(); floater(c.x, c.y - 6, 'ГОЛОДНО!'); if (hearts <= 0) { die(); return; } }
+      if (++starveT % 360 === 0) { hearts--; cat.inv = 60; sfx.hurt(); floater(c.x, c.y - 6, 'ГОЛОДНО!'); if (hearts <= 0) { die(); return; } }
     } else starveT = 0;
 
     const cbox = { x: c.x + 2, y: c.y + 2, w: 9, h: c.h - 2 };
@@ -850,7 +869,7 @@ body {
       if (it.taken) continue;
       if (ov(cbox, it)) {
         it.taken = true;
-        if (it.type === 'bowl') { food = 100; hearts = Math.min(3, hearts + 1); score += 50; floater(it.x - 20, it.y - 10, 'БАБУШКА ДАЛА МИСКУ!'); sfx.bowl(); }
+        if (it.type === 'bowl') { food = 100; hearts = Math.min(MAXH, hearts + 2); score += 50; floater(it.x - 20, it.y - 10, 'БАБУШКА ДАЛА МИСКУ!'); sfx.bowl(); }
         else {
           const v = { fish: [25, 10], sausage: [20, 15], milk: [30, 20] }[it.type];
           food = Math.min(100, food + v[0]); score += v[1]; floater(it.x, it.y - 8, '+' + v[1]); sfx.eat();
@@ -875,19 +894,19 @@ body {
             if (ov(cbox, hz)) hurt(e.x + e.w / 2);
           }
         } else if (e.scared <= 0) {
-          if (Math.abs(d) < 30 && catLow && e.cd <= 0) { e.dir = d < 0 ? -1 : 1; e.atk = 36; e.cd = 80; sfx.swish(); }
+          if (Math.abs(d) < 24 && catLow && e.cd <= 0) { e.dir = d < 0 ? -1 : 1; e.atk = 36; e.cd = 140; sfx.swish(); }
           else { e.x += e.dir * 0.4; if (e.x < e.x0) e.dir = 1; if (e.x > e.x1) e.dir = -1; }
         }
       } else if (e.type === 'walker') {
-        if (e.scared <= 0) e.x += e.dir * 0.55;
+        if (e.scared <= 0) e.x += e.dir * 0.45;
         if (e.scared <= 0 && ov(cbox, { x: e.x + 2, y: e.y, w: 6, h: 16 })) hurt(e.x + 5);
       } else if (e.type === 'vendor') {
         if (e.cd > 0) e.cd--;
         if (e.throwT > 0) e.throwT--;
         e.dir = d < 0 ? -1 : 1;
-        if (e.scared <= 0 && Math.abs(d) < 100 && e.cd <= 0) {
+        if (e.scared <= 0 && Math.abs(d) < 80 && e.cd <= 0) {
           lv.shots.push({ x: e.x + 4, y: e.y + 3, w: 5, h: 3, vx: clamp(d / 46, -2.2, 2.2), vy: -2.3 });
-          e.cd = 120; e.throwT = 14; sfx.throw();
+          e.cd = 220; e.throwT = 14; sfx.throw();
         }
       } else if (e.type === 'dog') {
         if (e.st === 'flee') {
@@ -895,14 +914,14 @@ body {
           else { e.st = 'sit'; e.rest = 100; }
         } else if (e.st === 'sit') {
           if (e.rest > 0) e.rest--;
-          else if (Math.abs(d) < 84) { e.st = 'chase'; sfx.bark(); }
+          else if (Math.abs(d) < 60) { e.st = 'chase'; e.chaseT = 0; sfx.bark(); }
         } else if (e.st === 'chase') {
           e.dir = d < 0 ? -1 : 1;
           const high = c.y + c.h < GROUND - 8;
           if (high && Math.abs(d) < 12) { e.bark = true; if (t % 45 === 0) sfx.bark(); }
-          else { e.bark = false; e.x += e.dir * 1.45; }
-          if (Math.abs(d) > 180) { e.st = 'sit'; e.rest = 60; }
-          if (ov(cbox, { x: e.x + 1, y: e.y + 1, w: 14, h: 7 }) && hurt(e.x + 8)) { e.st = 'sit'; e.rest = 150; }
+          else { e.bark = false; e.x += e.dir * 1.0; }
+          if (Math.abs(d) > 140 || ++e.chaseT > 300) { e.st = 'sit'; e.rest = 150; }
+          if (ov(cbox, { x: e.x + 1, y: e.y + 1, w: 14, h: 7 }) && hurt(e.x + 8)) { e.st = 'sit'; e.rest = 260; }
         }
       }
     }
@@ -918,12 +937,12 @@ body {
     // traffic
     const inTraffic = c.x > 140 && c.x < lv.len - 140;
     const cfg = lv.cfg;
-    if (cfg.cars && inTraffic && --lv.carT <= 0) { lv.warns.push({ type: 'car', t: 60 }); lv.carT = cfg.cars[0] + Math.random() * (cfg.cars[1] - cfg.cars[0]); sfx.horn(); }
-    if (cfg.motos && inTraffic && --lv.motoT <= 0) { lv.warns.push({ type: 'moto', t: 45 }); lv.motoT = cfg.motos[0] + Math.random() * (cfg.motos[1] - cfg.motos[0]); sfx.moto(); }
+    if (cfg.cars && inTraffic && --lv.carT <= 0) { lv.warns.push({ type: 'car', t: 95 }); lv.carT = cfg.cars[0] + Math.random() * (cfg.cars[1] - cfg.cars[0]); sfx.horn(); }
+    if (cfg.motos && inTraffic && --lv.motoT <= 0) { lv.warns.push({ type: 'moto', t: 80 }); lv.motoT = cfg.motos[0] + Math.random() * (cfg.motos[1] - cfg.motos[0]); sfx.moto(); }
     for (const w of lv.warns) {
       if (--w.t <= 0) {
-        if (w.type === 'car') lv.veh.push({ type: 'car', x: camX + W + 4, y: GROUND - 14, w: 30, h: 14, vx: -2.3 });
-        else lv.veh.push({ type: 'moto', x: camX + W + 4, y: GROUND - 12, w: 20, h: 12, vx: -3.4 });
+        if (w.type === 'car') lv.veh.push({ type: 'car', x: camX + W + 4, y: GROUND - 14, w: 30, h: 14, vx: -1.9 });
+        else lv.veh.push({ type: 'moto', x: camX + W + 4, y: GROUND - 12, w: 20, h: 12, vx: -2.7 });
       }
     }
     lv.warns = lv.warns.filter(w => w.t > 0);
@@ -1144,19 +1163,21 @@ body {
   // ---------- HUD ----------
   function drawHud() {
     fill('sky', 0, 0, W, 10);
-    for (let i = 0; i < 3; i++) spr(i < hearts ? 'heart' : 'heartE', 0, 2 + i * 9, 2, false);
+    for (let i = 0; i < MAXH; i++) spr(i < hearts ? 'heart' : 'heartE', 0, 2 + i * 8, 2, false);
     const low = food < 25 && (t >> 3) & 1;
-    if (!low) spr('fishI', 0, 31, 3, false);
-    fill('ink', 40, 2, 32, 6); fill('sky', 41, 3, 30, 4);
-    fill('ink', 42, 4, Math.round(food / 100 * 28), 2);
+    if (!low) spr('fishI', 0, 44, 3, false);
+    fill('ink', 53, 2, 28, 6); fill('sky', 54, 3, 26, 4);
+    fill('ink', 55, 4, Math.round(food / 100 * 24), 2);
     // route home
-    const x0 = 80, x1 = 150;
+    const x0 = 87, x1 = 150;
+    const mx = x0 + Math.round((x1 - x0 - 4) / 2);
+    fill('ink', mx + 1, lv.cp ? 1 : 4, 1, lv.cp ? 6 : 3); if (lv.cp) fill('ink', mx + 2, 1, 2, 2);
     for (let x = x0; x < x1; x += 2) fill('ink', x, 6, 1, 1);
     spr('house', 0, x1 + 1, 1, false);
     const px = x0 + Math.round(clamp(cat.x / lv.len, 0, 1) * (x1 - x0 - 4));
     fill('ink', px, 3, 4, 3); fill('ink', px + 3, 2, 1, 1); fill('ink', px + 1, 2, 1, 1);
     text(pad5(score).slice(1), W - 2 - textW('0000'), 2);
-    if (cat.hissCd > 0) fill('ink', 2, 9, Math.round((1 - cat.hissCd / 300) * 25), 1);
+    if (cat.hissCd > 0) fill('ink', 2, 9, Math.round((1 - cat.hissCd / HISS_CD) * 38), 1);
     else for (let x = 0; x < W; x += 2) fill('ink', x, 9, 1, 1);
   }
 
@@ -1175,6 +1196,14 @@ body {
     }
     for (const p of lv.props) if (p.x > cx - 50 && p.x < cx + W + 10) drawProp(p);
     drawShelter(lv);
+    {
+      const fx = lv.cp ? lv.cp.x : Math.round(lv.len * 0.5);
+      if (fx > cx - 10 && fx < cx + W + 10) {
+        fill('platLine', fx, GROUND - 20, 1, 20);
+        if (lv.cp) { fill('platLine', fx + 1, GROUND - 20, 7, 5); fill('platHi', fx + 2, GROUND - 19, 5, 3); }
+        else { fill('platLine', fx + 1, GROUND - 8, 5, 4); }
+      }
+    }
     for (const it of lv.items) if (!it.taken && it.x > cx - 12 && it.x < cx + W) spr(it.type, 0, it.x, it.y + ((t >> 4) & 1), false);
     for (const e of lv.ens) if (e.x > cx - 30 && e.x < cx + W + 10) drawEnemy(e);
     if (!(cat.inv > 0 && (t >> 2) & 1)) {
@@ -1267,7 +1296,7 @@ body {
       if ((t >> 5) & 1) textC('TAB', 58, 'ink');
     } else if (state === 'dead') {
       panel(22, 34, 148, 40); textC('МУРКА УСТАЛА...', 40, 'ink'); textC('НО НЕ СДАЁТСЯ.', 50, 'ink');
-      if ((t >> 5) & 1) textC('ENTER - ЕЩЁ РАЗ', 62, 'ink');
+      if ((t >> 5) & 1) textC(lv.cp ? 'ENTER - С ПОЛПУТИ' : 'ENTER - ЕЩЁ РАЗ', 62, 'ink');
     } else if (state === 'clear') {
       panel(22, 26, 148, 58);
       textC('ГЛАВА ПРОЙДЕНА!', 30, 'ink');
